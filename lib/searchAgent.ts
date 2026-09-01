@@ -1,14 +1,3 @@
-/**
- * Search Agent Pipeline
- * ------------------------------------------------------------
- * User Question → Search → Filter by Trust → Extract → Calculate → Recommend
- *
- * 硬性护栏：
- *  1. 任何 Recommendation 必须绑定 { price, sourceUrl, checkedAt }，缺一不可，
- *     否则返回 status: "insufficient_data"，绝不允许 LLM 编造。
- *  2. purchaseUrl 必须是搜索结果中出现过的真实 URL，本层不生成、不拼接 URL。
- */
-
 import { evaluateSource, trustRank, TrustResult } from "./sourceTrust";
 import { calculateTotalCost, compareCostOptions, CostBreakdown } from "./costCalculator";
 
@@ -83,7 +72,7 @@ export async function comparePlaceTickets(
       status: "insufficient_data",
       query,
       candidates: [],
-      message: "我暂时无法确认这个信息 — 没有找到可信来源的实时价格，请稍后重试或直接前往官方渠道核实。",
+      message: "我暂时无法确认这个信息，没有找到可信来源的实时价格，请稍后重试或直接前往官方渠道核实。",
     };
   }
 
@@ -139,5 +128,82 @@ export function compareTransportOptions(
       comfortScore: options[i].comfortScore,
     })),
     recommended: cheapest.label,
+  };
+}
+
+export async function compareTransportRealSearch(
+  from: string,
+  to: string,
+  partySize: number,
+  adapter: SearchAdapter
+) {
+  const modes = [
+    { mode: "大巴", query: `${from}到${to} 大巴 票价`, isPerPersonPrice: true },
+    { mode: "拼车", query: `${from}到${to} 拼车 价格`, isPerPersonPrice: true },
+    { mode: "包车", query: `${from}到${to} 包车 一天多少钱`, isPerPersonPrice: false },
+  ];
+
+  const results: {
+    mode: string;
+    candidates: PriceCandidate[];
+    bestPrice: number | null;
+  }[] = [];
+
+  for (const m of modes) {
+    const raw = await adapter.search(m.query);
+    const candidates: PriceCandidate[] = [];
+
+    for (const r of raw) {
+      const trust = evaluateSource({ url: r.url, pageText: r.snippet, publishedAt: r.publishedAt });
+      if (!trust.usableAsPriceSource) continue;
+
+      const prices = extractPricesFromSnippet(r.snippet);
+      for (const price of prices) {
+        candidates.push({
+          title: r.title,
+          price,
+          includes: [],
+          sourceUrl: r.url,
+          sourceTrust: trust,
+          checkedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    candidates.sort((a, b) => trustRank(a.sourceTrust.level) - trustRank(b.sourceTrust.level) || a.price - b.price);
+
+    results.push({
+      mode: m.mode,
+      candidates,
+      bestPrice: candidates[0]?.price ?? null,
+    });
+  }
+
+  const usable = results.filter((r) => r.bestPrice !== null);
+
+  if (usable.length === 0) {
+    return {
+      status: "insufficient_data" as const,
+      message: "我暂时无法确认这几种交通方式的实时价格，建议直接查携程或当地客运站官方渠道核实。",
+    };
+  }
+
+  const breakdowns = usable.map((r) => {
+    const modeConfig = modes.find((m) => m.mode === r.mode)!;
+    return calculateTotalCost({
+      label: r.mode,
+      basePrice: r.bestPrice!,
+      partySize,
+      isPerPersonPrice: modeConfig.isPerPersonPrice,
+    });
+  });
+
+  const { cheapest, ranked } = compareCostOptions(breakdowns);
+
+  return {
+    status: "ok" as const,
+    recommended: cheapest.label,
+    ranked,
+    detail: usable,
   };
 }
