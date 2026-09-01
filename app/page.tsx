@@ -164,7 +164,7 @@ export default function Home() {
 
       <hr style={{ margin: "28px 0", border: "none", borderTop: "1px solid #eee" }} />
 
-      <p style={{ color: "#666", fontSize: 14 }}>酒店比价</p>
+      <p style={{ color: "#666", fontSize: 14 }}>酒店搜索</p>
       <input
         value={hotelLocation}
         onChange={(e) => setHotelLocation(e.target.value)}
@@ -190,53 +190,31 @@ export default function Home() {
         disabled={hotelLoading}
         style={{ marginTop: 12, width: "100%", padding: 12, background: "#111", color: "#fff", borderRadius: 8 }}
       >
-        {hotelLoading ? "AI 正在比价" : "帮我比较酒店"}
+        {hotelLoading ? "生成搜索链接中" : "去平台搜酒店"}
       </button>
 
-      {hotelResult && hotelResult.status === "insufficient_data" && (
-        <p style={{ marginTop: 20, color: "#c0392b" }}>{hotelResult.message}</p>
-      )}
-
-      {hotelResult && hotelResult.status === "error" && (
-        <p style={{ marginTop: 20, color: "#c0392b" }}>报错：{hotelResult.message}</p>
-      )}
-
       {hotelResult && hotelResult.status === "ok" && (
-        <div style={{ marginTop: 20 }}>
-          <h2 style={{ fontSize: 16 }}>AI 推荐</h2>
-          <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 12, marginTop: 8 }}>
-            <div style={{ fontWeight: 600 }}>{hotelResult.recommendation.title}</div>
-            <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>{hotelResult.recommendation.reasoning}</div>
-            <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>
-              数据更新时间：{new Date(hotelResult.recommendation.checkedAt).toLocaleString("zh-CN")}
-            </div>
-            <a
-              href={hotelResult.recommendation.purchaseUrl}
-              target="_blank"
-              style={{ display: "inline-block", marginTop: 10, color: "#2563eb" }}
-            >
-              查看预订
-            </a>
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>
+            酒店价格是动态的，需要选日期才显示，无法自动比价，这里直接帮你打开对应平台的搜索结果
           </div>
-
-          <h3 style={{ fontSize: 14, marginTop: 16 }}>所有候选项</h3>
-          {hotelResult.candidates.map((c: any, i: number) => (
-            <div key={i} style={{ fontSize: 13, padding: "8px 0", borderBottom: "1px solid #f0f0f0" }}>
-              <div>
-                {c.title} — ¥{c.price}/晚{" "}
-                <span
-                  style={{
-                    fontSize: 11,
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    background: c.sourceTrust.level === "official" ? "#dcfce7" : "#dbeafe",
-                  }}
-                >
-                  {c.sourceTrust.level}
-                </span>
-              </div>
-              <div style={{ color: "#999", fontSize: 11 }}>{c.sourceTrust.reason}</div>
-            </div>
+          {hotelResult.links.map((link: any, i: number) => (
+            <a
+              key={i}
+              href={link.url}
+              target="_blank"
+              style={{
+                display: "block",
+                padding: 12,
+                border: "1px solid #eee",
+                borderRadius: 8,
+                marginTop: 8,
+                color: "#2563eb",
+                textDecoration: "none",
+              }}
+            >
+              {link.label} → {hotelResult.location}
+            </a>
           ))}
         </div>
       )}
