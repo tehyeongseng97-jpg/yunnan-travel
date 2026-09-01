@@ -18,15 +18,11 @@ export async function POST(req: NextRequest) {
   }
 
   const warnings = collectAllWarnings(days);
-  const totalMajor = days.reduce((sum, d) => sum + d.majorCost, 0);
-  const totalTaxi = days.reduce((sum, d) => sum + d.taxiCost, 0);
 
   return NextResponse.json({
     status: "ok",
     days,
     warnings,
-    totalMajor,
-    totalTaxi,
     dayCount: days.length,
   });
 }
