@@ -60,12 +60,11 @@ export default function Home() {
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 20, fontFamily: "system-ui" }}>
       <h1 style={{ fontSize: 20 }}>YUNNAN AI TRAVEL AGENT</h1>
 
-      {/* ---------- 行程总览 ---------- */}
       <p style={{ color: "#666", fontSize: 14, marginTop: 16 }}>粘贴你的完整行程，AI 帮你结构化整理</p>
       <textarea
         value={itineraryText}
         onChange={(e) => setItineraryText(e.target.value)}
-        placeholder="把整段行程文字粘贴到这里..."
+        placeholder="把整段行程文字粘贴到这里"
         rows={6}
         style={{ width: "100%", padding: 10, marginTop: 8, border: "1px solid #ddd", borderRadius: 8, fontSize: 13 }}
       />
@@ -123,7 +122,6 @@ export default function Home() {
 
       <hr style={{ margin: "28px 0", border: "none", borderTop: "1px solid #eee" }} />
 
-      {/* ---------- 门票比价 ---------- */}
       <p style={{ color: "#666", fontSize: 14 }}>输入景点名，AI 帮你比价</p>
       <input
         value={place}
@@ -147,4 +145,19 @@ export default function Home() {
         style={{ marginTop: 12, width: "100%", padding: 12, background: "#111", color: "#fff", borderRadius: 8 }}
       >
         {loading ? "AI 正在比价" : "帮我比价"}
-      
+      </button>
+
+      {result && result.status === "insufficient_data" && (
+        <p style={{ marginTop: 20, color: "#c0392b" }}>{result.message}</p>
+      )}
+
+      {result && result.status === "ok" && (
+        <div style={{ marginTop: 20 }}>
+          <h2 style={{ fontSize: 16 }}>AI 推荐</h2>
+          <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 12, marginTop: 8 }}>
+            <div style={{ fontWeight: 600 }}>{result.recommendation.title}</div>
+            <div style={{ fontSize: 13, color: "#555", marginTop: 6 }}>{result.recommendation.reasoning}</div>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>
+              数据更新时间：{new Date(result.recommendation.checkedAt).toLocaleString("zh-CN")}
+            </div>
+            
