@@ -190,9 +190,10 @@ export default function Home() {
               {leg.from} → {leg.to}：{leg.price ? `¥${leg.price}` : "未找到价格"}
             </div>
           ))}
-          {routeResult.taxiTotal !== null && (
+
+          {routeResult.taxiPartialTotal !== null && (
             <div style={{ fontSize: 13, marginTop: 6, fontWeight: 600 }}>
-              打车总计：¥{routeResult.taxiTotal}
+              打车已找到部分合计：¥{routeResult.taxiPartialTotal}（{routeResult.taxiFoundCount}/{routeResult.taxiLegCount} 段有数据）
             </div>
           )}
 
