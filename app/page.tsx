@@ -85,8 +85,12 @@ export default function Home() {
           <div style={{ background: "#f5f5f5", padding: 12, borderRadius: 8 }}>
             <div style={{ fontWeight: 600 }}>共识别 {itineraryResult.dayCount} 天</div>
             <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>
-              粗略预算合计：约 ¥{itineraryResult.totalEstimate}（不含住宿，仅供参考）
+              大额支出（门票/大交通）合计：约 ¥{itineraryResult.totalMajor}
             </div>
+            <div style={{ fontSize: 13, color: "#555", marginTop: 2 }}>
+              零散打车合计：约 ¥{itineraryResult.totalTaxi}
+            </div>
+            <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>不含住宿，仅供参考</div>
           </div>
 
           {itineraryResult.warnings.length > 0 && (
@@ -112,8 +116,10 @@ export default function Home() {
                   交通：{d.transportModes.join("、")}
                 </div>
               )}
-              {d.estimatedCost && (
-                <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>预计花费：约 ¥{d.estimatedCost}</div>
+              {(d.majorCost > 0 || d.taxiCost > 0) && (
+                <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                  大额 ¥{d.majorCost}　打车 ¥{d.taxiCost}
+                </div>
               )}
             </div>
           ))}
