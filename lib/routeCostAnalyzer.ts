@@ -37,7 +37,10 @@ export interface RouteLegResult {
 export interface RouteCostAnalysis {
   status: "ok" | "insufficient_data";
   stops: string[];
-  taxiTotal: number | null;
+  taxiTotal: number | null; // 仅在所有分段都有数据时才是完整总计
+  taxiPartialTotal: number | null; // 已找到分段的部分加总（无论是否完整）
+  taxiFoundCount: number;
+  taxiLegCount: number;
   taxiLegs: RouteLegResult[];
   charterTotal: number | null;
   charterPerPerson: number | null;
@@ -48,8 +51,8 @@ export interface RouteCostAnalysis {
 
 /**
  * 分析一天多站点行程：打车分段加总 vs 整天包车，哪个划算。
- * hasLuggage=true 时（当天要换酒店带行李跑一整天），
- * 即使打车总价略低，也会在结论里提醒包车更省心。
+ * 关键修复：只要有部分分段找到价格，就展示部分数据，
+ * 不再因为某一段缺数据就把整体判定为"完全无数据"。
  */
 export async function analyzeMultiStopDay(
   stops: string[],
@@ -62,6 +65,9 @@ export async function analyzeMultiStopDay(
       status: "insufficient_data",
       stops,
       taxiTotal: null,
+      taxiPartialTotal: null,
+      taxiFoundCount: 0,
+      taxiLegCount: 0,
       taxiLegs: [],
       charterTotal: null,
       charterPerPerson: null,
@@ -72,8 +78,8 @@ export async function analyzeMultiStopDay(
   }
 
   const taxiLegs: RouteLegResult[] = [];
-  let taxiTotal = 0;
-  let taxiMissing = false;
+  let taxiPartialTotal = 0;
+  let foundCount = 0;
 
   for (let i = 0; i < stops.length - 1; i++) {
     const from = stops[i];
@@ -81,12 +87,16 @@ export async function analyzeMultiStopDay(
     const result = await searchBestPrice(`${from}到${to} 打车 价格`, adapter);
     if (result) {
       taxiLegs.push({ from, to, price: result.price, sourceUrl: result.sourceUrl });
-      taxiTotal += result.price;
+      taxiPartialTotal += result.price;
+      foundCount++;
     } else {
       taxiLegs.push({ from, to, price: null, sourceUrl: null });
-      taxiMissing = true;
     }
   }
+
+  const legCount = stops.length - 1;
+  const taxiComplete = foundCount === legCount;
+  const taxiTotal = taxiComplete ? taxiPartialTotal : null;
 
   const origin = stops[0];
   const destination = stops[stops.length - 1];
@@ -94,34 +104,54 @@ export async function analyzeMultiStopDay(
 
   const charterTotal = charterResult?.price ?? null;
   const charterPerPerson = charterTotal ? Math.round(charterTotal / partySize) : null;
-  const taxiPerPerson = taxiMissing ? null : Math.round(taxiTotal / partySize);
 
   let recommendation = "";
-  if (taxiPerPerson !== null && charterPerPerson !== null) {
-    const diff = taxiPerPerson - charterPerPerson;
-    if (hasLuggage) {
-      recommendation =
-        diff > 0
-          ? `包车人均约¥${charterPerPerson}，比打车分段（人均约¥${taxiPerPerson}）便宜¥${diff}，且今天要带行李换酒店，全程一辆车更省心，推荐包车。`
-          : `打车分段人均约¥${taxiPerPerson}，比包车（人均约¥${charterPerPerson}）便宜¥${-diff}，但今天要带行李换酒店，多次上下车不方便，仍建议考虑包车。`;
-    } else {
-      recommendation =
-        diff > 0
-          ? `包车人均约¥${charterPerPerson}，比打车分段（人均约¥${taxiPerPerson}）便宜¥${diff}，推荐包车。`
-          : `打车分段人均约¥${taxiPerPerson}，比包车（人均约¥${charterPerPerson}）便宜¥${-diff}，且路线灵活，推荐打车分段。`;
-    }
-  } else if (taxiPerPerson !== null) {
-    recommendation = `只找到打车分段价格（人均约¥${taxiPerPerson}），未找到可信的包车价格，建议直接联系当地包车公司询价对比。`;
-  } else if (charterPerPerson !== null) {
-    recommendation = `只找到包车价格（人均约¥${charterPerPerson}），部分打车分段价格未找到，建议以包车为主。`;
-  } else {
+
+  if (foundCount === 0 && charterTotal === null) {
     recommendation = "打车和包车价格均未找到可信数据，建议出发前直接询价。";
+  } else {
+    const parts: string[] = [];
+
+    if (foundCount > 0) {
+      const taxiPerPersonPartial = Math.round(taxiPartialTotal / partySize);
+      if (taxiComplete) {
+        parts.push(`打车分段人均约¥${taxiPerPersonPartial}（${legCount}段全部找到价格）`);
+      } else {
+        parts.push(
+          `打车分段中${foundCount}/${legCount}段找到参考价，已找到部分合计约¥${taxiPartialTotal}（人均约¥${taxiPerPersonPartial}，未包含缺失段，实际会更高）`
+        );
+      }
+    } else {
+      parts.push("打车分段价格均未找到");
+    }
+
+    if (charterPerPerson !== null) {
+      parts.push(`整天包车约¥${charterTotal}（人均约¥${charterPerPerson}）`);
+    } else {
+      parts.push("包车价格未找到");
+    }
+
+    recommendation = parts.join("；") + "。";
+
+    if (hasLuggage) {
+      recommendation += " 今天要带行李换酒店，多次上下车不方便，即使打车总价可能更低，仍建议优先考虑包车，全程一辆车更省心。";
+    } else if (taxiComplete && charterPerPerson !== null) {
+      const diff = Math.round(taxiPartialTotal / partySize) - charterPerPerson;
+      if (diff > 0) {
+        recommendation += ` 综合看包车更划算，人均省约¥${diff}。`;
+      } else if (diff < 0) {
+        recommendation += ` 综合看打车分段更划算，人均省约¥${-diff}，且路线更灵活。`;
+      }
+    }
   }
 
   return {
     status: "ok",
     stops,
-    taxiTotal: taxiMissing ? null : taxiTotal,
+    taxiTotal,
+    taxiPartialTotal: foundCount > 0 ? taxiPartialTotal : null,
+    taxiFoundCount: foundCount,
+    taxiLegCount: legCount,
     taxiLegs,
     charterTotal,
     charterPerPerson,
