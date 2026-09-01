@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseItinerary, collectAllWarnings, estimateDailyCost } from "@/lib/itineraryParser";
+import { parseItinerary, collectAllWarnings } from "@/lib/itineraryParser";
 
 export async function POST(req: NextRequest) {
   const { text } = await req.json();
@@ -17,19 +17,16 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const daysWithCost = days.map((d) => ({
-    ...d,
-    estimatedCost: estimateDailyCost(d.prices),
-  }));
-
   const warnings = collectAllWarnings(days);
-  const totalEstimate = daysWithCost.reduce((sum, d) => sum + (d.estimatedCost || 0), 0);
+  const totalMajor = days.reduce((sum, d) => sum + d.majorCost, 0);
+  const totalTaxi = days.reduce((sum, d) => sum + d.taxiCost, 0);
 
   return NextResponse.json({
     status: "ok",
-    days: daysWithCost,
+    days,
     warnings,
-    totalEstimate,
+    totalMajor,
+    totalTaxi,
     dayCount: days.length,
   });
 }
