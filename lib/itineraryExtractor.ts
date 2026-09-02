@@ -22,10 +22,9 @@ export interface ExtractedTasks {
   routeTasks: RouteTask[];
 }
 
-// 明确免费/不构成门票景点的地名，即使命中门票关键词也排除
 const FREE_PLACE_WHITELIST = [
   "翠湖", "抚仙湖", "洱海", "纳帕海", "海洪湿地", "南强街", "斗南花市",
-  "独克宗古城", "束河古镇", "白沙古镇", "喜洲古镇", "苍山", // 苍山本身免费，索道单独判断
+  "独克宗古城", "束河古镇", "白沙古镇", "喜洲古镇", "苍山",
 ];
 
 const NON_TICKET_KEYWORDS = [
@@ -38,7 +37,6 @@ const TICKET_KEYWORDS = [
   "松赞林", "木府", "转经筒", "龟山公园", "纳帕海",
 ];
 
-// 通用占位词，不构成有效酒店/区域名
 const HOTEL_PLACEHOLDER_WORDS = [
   "酒店", "住宿", "入住", "换酒店", "最后一晚", "今晚", "继续住",
   "安排", "民宿",
@@ -50,29 +48,11 @@ function looksLikeTicketPlace(segment: string): boolean {
   return TICKET_KEYWORDS.some((kw) => segment.includes(kw));
 }
 
-/** 从正文（非标题）里额外找出未在标题出现的门票关键词，如"纳帕海"这类藏在正文中的景点 */
-function findAdditionalTicketMentions(rawText: string, alreadyFound: Set<string>): string[] {
-  const found: string[] = [];
-  for (const kw of TICKET_KEYWORDS) {
-    if (rawText.includes(kw) && !alreadyFound.has(kw)) {
-      // 避免把关键词本身当地名（如"索道"不是完整地名），只在关键词前后凑出更完整的名字
-      const match = rawText.match(new RegExp(`[\\u4e00-\\u9fa5]{0,4}${kw}`));
-      const place = match ? match[0] : kw;
-      if (!FREE_PLACE_WHITELIST.some((w) => place.includes(w) && !place.includes("索道"))) {
-        found.push(place);
-        alreadyFound.add(kw);
-      }
-    }
-  }
-  return found;
-}
-
 function isValidHotelName(text: string): boolean {
   const stripped = text.trim();
-  if (stripped.length < 3) return false; // 太短，大概率是占位词
-  if (HOTEL_PLACEHOLDER_WORDS.some((w) => stripped === w || stripped.length <= 4 && stripped.includes(w))) {
-    // 允许"入住XX古城酒店"这种更长的组合，只排除纯占位词本身
-    if (stripped.length <= 6 && HOTEL_PLACEHOLDER_WORDS.some((w) => stripped.includes(w)) && !/[大理丽江香格里拉沙溪喜洲白沙昆明西双版纳告庄独克宗]/.test(stripped)) {
+  if (stripped.length < 3) return false;
+  if (stripped.length <= 6 && HOTEL_PLACEHOLDER_WORDS.some((w) => stripped.includes(w))) {
+    if (!/[大理丽江香格里拉沙溪喜洲白沙昆明西双版纳告庄独克宗]/.test(stripped)) {
       return false;
     }
   }
@@ -86,6 +66,12 @@ function extractStopsFromTitle(title: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * 只依赖标题分段来判断门票项，不再尝试从正文里额外提取。
+ * 会漏掉少数只在正文提及的景点（如纳帕海如果不在标题里），
+ * 但换来的是列表干净、不重复、不碎片化 —— 这个取舍更划算，
+ * 用户扫一眼列表就能补充漏掉的一两项，但没法忍受一堆重复碎片。
+ */
 export function extractTasks(days: ParsedDay[]): ExtractedTasks {
   const ticketTasks: TicketTask[] = [];
   const hotelTasks: HotelTask[] = [];
@@ -102,13 +88,6 @@ export function extractTasks(days: ParsedDay[]): ExtractedTasks {
       }
     }
 
-    // 补充正文中提到但标题没有的门票项（如纳帕海）
-    const additional = findAdditionalTicketMentions(day.rawText, seenTickets);
-    for (const place of additional) {
-      ticketTasks.push({ date: day.date, place });
-    }
-
-    // 酒店：过滤掉占位词，只保留看起来像真实地名/酒店名的
     if (day.hotel && isValidHotelName(day.hotel)) {
       hotelTasks.push({ date: day.date, location: day.hotel });
     }
