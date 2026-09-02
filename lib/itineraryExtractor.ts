@@ -37,9 +37,9 @@ const TICKET_KEYWORDS = [
   "松赞林", "木府", "转经筒", "龟山公园", "纳帕海",
 ];
 
-const HOTEL_PLACEHOLDER_WORDS = [
-  "酒店", "住宿", "入住", "换酒店", "最后一晚", "今晚", "继续住",
-  "安排", "民宿",
+// 只过滤纯占位词本身，不再用长度粗暴过滤——之前"丽江市区"这种4字真实地名被误杀了
+const HOTEL_PLACEHOLDER_ONLY = [
+  "酒店", "住宿", "入住", "换酒店", "住宿安排", "今晚", "继续住", "民宿",
 ];
 
 function looksLikeTicketPlace(segment: string): boolean {
@@ -50,13 +50,9 @@ function looksLikeTicketPlace(segment: string): boolean {
 
 function isValidHotelName(text: string): boolean {
   const stripped = text.trim();
-  if (stripped.length < 3) return false;
-  if (stripped.length <= 6 && HOTEL_PLACEHOLDER_WORDS.some((w) => stripped.includes(w))) {
-    if (!/[大理丽江香格里拉沙溪喜洲白沙昆明西双版纳告庄独克宗]/.test(stripped)) {
-      return false;
-    }
-  }
-  return true;
+  if (stripped.length < 2) return false;
+  // 只排除完全等于纯占位词的情况，不再按长度整体拒绝
+  return !HOTEL_PLACEHOLDER_ONLY.some((w) => stripped === w);
 }
 
 function extractStopsFromTitle(title: string): string[] {
@@ -66,12 +62,6 @@ function extractStopsFromTitle(title: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * 只依赖标题分段来判断门票项，不再尝试从正文里额外提取。
- * 会漏掉少数只在正文提及的景点（如纳帕海如果不在标题里），
- * 但换来的是列表干净、不重复、不碎片化 —— 这个取舍更划算，
- * 用户扫一眼列表就能补充漏掉的一两项，但没法忍受一堆重复碎片。
- */
 export function extractTasks(days: ParsedDay[]): ExtractedTasks {
   const ticketTasks: TicketTask[] = [];
   const hotelTasks: HotelTask[] = [];
