@@ -17,6 +17,9 @@ export default function Home() {
   const [itineraryLoading, setItineraryLoading] = useState(false);
   const [itineraryResult, setItineraryResult] = useState<any>(null);
 
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksResult, setTasksResult] = useState<any>(null);
+
   const [stopsText, setStopsText] = useState("沙溪、喜洲、蛮荒时代、大理");
   const [hasLuggage, setHasLuggage] = useState(true);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -67,6 +70,19 @@ export default function Home() {
     setItineraryLoading(false);
   }
 
+  async function handleExtractTasks() {
+    setTasksLoading(true);
+    setTasksResult(null);
+    const res = await fetch("/api/itinerary/extract-tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: itineraryText }),
+    });
+    const data = await res.json();
+    setTasksResult(data);
+    setTasksLoading(false);
+  }
+
   async function handleRouteAnalysis() {
     setRouteLoading(true);
     setRouteResult(null);
@@ -106,13 +122,69 @@ export default function Home() {
         rows={6}
         style={{ width: "100%", padding: 10, marginTop: 8, border: "1px solid #ddd", borderRadius: 8, fontSize: 13 }}
       />
-      <button
-        onClick={handleParseItinerary}
-        disabled={itineraryLoading || !itineraryText}
-        style={{ marginTop: 8, width: "100%", padding: 12, background: "#111", color: "#fff", borderRadius: 8 }}
-      >
-        {itineraryLoading ? "正在解析" : "解析行程"}
-      </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button
+          onClick={handleParseItinerary}
+          disabled={itineraryLoading || !itineraryText}
+          style={{ flex: 1, padding: 12, background: "#111", color: "#fff", borderRadius: 8 }}
+        >
+          {itineraryLoading ? "正在解析" : "解析行程"}
+        </button>
+        <button
+          onClick={handleExtractTasks}
+          disabled={tasksLoading || !itineraryText}
+          style={{ flex: 1, padding: 12, background: "#2563eb", color: "#fff", borderRadius: 8 }}
+        >
+          {tasksLoading ? "正在识别" : "识别待查项"}
+        </button>
+      </div>
+
+      {tasksResult && tasksResult.status === "insufficient_data" && (
+        <p style={{ marginTop: 16, color: "#c0392b" }}>{tasksResult.message}</p>
+      )}
+
+      {tasksResult && tasksResult.status === "ok" && (
+        <div style={{ marginTop: 16, background: "#eff6ff", padding: 12, borderRadius: 8 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>AI 识别出的待查项</div>
+          <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+            这是初版识别规则，可能有遗漏或误判，先看看准不准
+          </div>
+
+          {tasksResult.ticketTasks.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>门票（{tasksResult.ticketTasks.length}项）</div>
+              {tasksResult.ticketTasks.map((t: any, i: number) => (
+                <div key={i} style={{ fontSize: 13, color: "#333" }}>
+                  {t.date} — {t.place}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tasksResult.hotelTasks.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>酒店（{tasksResult.hotelTasks.length}项）</div>
+              {tasksResult.hotelTasks.map((t: any, i: number) => (
+                <div key={i} style={{ fontSize: 13, color: "#333" }}>
+                  {t.date} — {t.location}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tasksResult.routeTasks.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>多站点路线（{tasksResult.routeTasks.length}项）</div>
+              {tasksResult.routeTasks.map((t: any, i: number) => (
+                <div key={i} style={{ fontSize: 13, color: "#333" }}>
+                  {t.date} — {t.stops.join(" → ")}
+                  {t.hasLuggage && <span style={{ color: "#c0392b" }}>（带行李）</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {itineraryResult && itineraryResult.status === "insufficient_data" && (
         <p style={{ marginTop: 16, color: "#c0392b" }}>{itineraryResult.message}</p>
