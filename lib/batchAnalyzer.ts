@@ -17,8 +17,10 @@ export interface BatchTicketResult {
 export interface BatchHotelResult {
   date: string;
   location: string;
+  recommendedArea: string | null;
   links: { label: string; url: string }[];
 }
+
 
 export interface BatchRouteResult {
   date: string;
@@ -80,10 +82,16 @@ export async function runBatchAnalysis(
     }
   }
 
-  const hotels: BatchHotelResult[] = tasks.hotelTasks.map((h) => {
+    const hotels: BatchHotelResult[] = tasks.hotelTasks.map((h) => {
     const linkResult = buildHotelSearchLinks(h.location);
-    return { date: h.date, location: h.location, links: linkResult.links };
+    return {
+      date: h.date,
+      location: h.location,
+      recommendedArea: h.recommendedArea ?? null,
+      links: linkResult.links,
+    };
   });
+
 
   const routes: BatchRouteResult[] = [];
   for (const r of tasks.routeTasks) {
