@@ -24,6 +24,9 @@ export default function Home() {
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchProgress, setBatchProgress] = useState("");
 
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [reminderResult, setReminderResult] = useState<any>(null);
+
   const [stopsText, setStopsText] = useState("沙溪、喜洲、蛮荒时代、大理");
   const [hasLuggage, setHasLuggage] = useState(true);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -90,7 +93,7 @@ export default function Home() {
   async function handleBatchAnalyze() {
     setBatchLoading(true);
     setBatchResult(null);
-    setBatchProgress("AI 正在逐项查询，涉及较多搜索，可能需要1-2分钟，请耐心等待");
+    setBatchProgress("AI 正在逐项查询，可能需要1-2分钟，请耐心等待");
     try {
       const res = await fetch("/api/itinerary/batch-analyze", {
         method: "POST",
@@ -104,6 +107,19 @@ export default function Home() {
     }
     setBatchProgress("");
     setBatchLoading(false);
+  }
+
+  async function handleCheckReminders() {
+    setReminderLoading(true);
+    setReminderResult(null);
+    const res = await fetch("/api/itinerary/reminders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: itineraryText, windowDays: 3 }),
+    });
+    const data = await res.json();
+    setReminderResult(data);
+    setReminderLoading(false);
   }
 
   async function handleRouteAnalysis() {
@@ -170,15 +186,34 @@ export default function Home() {
         {batchLoading ? "AI 正在全部分析中..." : "一键分析全部行程（门票+酒店+交通）"}
       </button>
 
-      {batchProgress && (
-        <p style={{ marginTop: 8, fontSize: 12, color: "#666" }}>{batchProgress}</p>
+      <button
+        onClick={handleCheckReminders}
+        disabled={reminderLoading || !itineraryText}
+        style={{ marginTop: 8, width: "100%", padding: 12, background: "#f59e0b", color: "#fff", borderRadius: 8, fontSize: 13 }}
+      >
+        {reminderLoading ? "检查中" : "检查近3天内需要预订的事项"}
+      </button>
+
+      {reminderResult && reminderResult.status === "ok" && (
+        <div style={{ marginTop: 12 }}>
+          {reminderResult.reminders.length === 0 ? (
+            <p style={{ fontSize: 13, color: "#666" }}>未来3天内没有需要立即预订的事项</p>
+          ) : (
+            reminderResult.reminders.map((r: any, i: number) => (
+              <div key={i} style={{ background: "#fffbeb", padding: 10, borderRadius: 8, marginTop: 6, fontSize: 13 }}>
+                <span style={{ color: "#c0392b", fontWeight: 600 }}>
+                  {r.daysUntil === 0 ? "今天" : `${r.daysUntil}天后`}
+                </span>
+                （{r.date}）— {r.type}：{r.item}
+              </div>
+            ))
+          )}
+        </div>
       )}
 
-      {batchResult && batchResult.status === "error" && (
-        <p style={{ marginTop: 16, color: "#c0392b" }}>{batchResult.message}</p>
-      )}
+      {batchProgress && <p style={{ marginTop: 8, fontSize: 12, color: "#666" }}>{batchProgress}</p>}
 
-      {batchResult && batchResult.status === "insufficient_data" && (
+      {batchResult && (batchResult.status === "error" || batchResult.status === "insufficient_data") && (
         <p style={{ marginTop: 16, color: "#c0392b" }}>{batchResult.message}</p>
       )}
 
@@ -193,20 +228,12 @@ export default function Home() {
               <h3 style={{ fontSize: 14 }}>门票比价结果</h3>
               {batchResult.tickets.map((t: any, i: number) => (
                 <div key={i} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, marginTop: 8 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>
-                    {t.date} — {t.place}
-                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{t.date} — {t.place}</div>
                   {t.status === "ok" ? (
                     <>
                       <div style={{ fontSize: 13, color: "#16a34a", marginTop: 4 }}>约 ¥{t.price}</div>
                       <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{t.reasoning}</div>
-                      <a
-                        href={t.purchaseUrl}
-                        target="_blank"
-                        style={{ fontSize: 12, color: "#2563eb", marginTop: 4, display: "inline-block" }}
-                      >
-                        前往购买
-                      </a>
+                      <a href={t.purchaseUrl} target="_blank" style={{ fontSize: 12, color: "#2563eb", marginTop: 4, display: "inline-block" }}>前往购买</a>
                     </>
                   ) : (
                     <div style={{ fontSize: 12, color: "#c0392b", marginTop: 4 }}>{t.message}</div>
@@ -219,21 +246,15 @@ export default function Home() {
           {batchResult.hotels.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <h3 style={{ fontSize: 14 }}>酒店搜索链接</h3>
+              <div style={{ fontSize: 11, color: "#999", marginBottom: 6 }}>
+                行程里只写了推荐区域，没有具体酒店名，暂时无法直接推荐某一家，这里帮你打开对应区域的搜索结果自己挑
+              </div>
               {batchResult.hotels.map((h: any, i: number) => (
                 <div key={i} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, marginTop: 8 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>
-                    {h.date} — {h.location}
-                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{h.date} — {h.location}</div>
                   <div style={{ marginTop: 6 }}>
                     {h.links.map((link: any, j: number) => (
-                      <a
-                        key={j}
-                        href={link.url}
-                        target="_blank"
-                        style={{ fontSize: 12, color: "#2563eb", marginRight: 12 }}
-                      >
-                        {link.label}
-                      </a>
+                      <a key={j} href={link.url} target="_blank" style={{ fontSize: 12, color: "#2563eb", marginRight: 12 }}>{link.label}</a>
                     ))}
                   </div>
                 </div>
@@ -246,9 +267,7 @@ export default function Home() {
               <h3 style={{ fontSize: 14 }}>多站点交通分析</h3>
               {batchResult.routes.map((r: any, i: number) => (
                 <div key={i} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, marginTop: 8 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>
-                    {r.date} — {r.stops.join(" → ")}
-                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{r.date} — {r.stops.join(" → ")}</div>
                   {r.status === "ok" ? (
                     <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>{r.recommendation}</div>
                   ) : (
@@ -259,10 +278,6 @@ export default function Home() {
             </div>
           )}
         </div>
-      )}
-
-      {tasksResult && tasksResult.status === "insufficient_data" && (
-        <p style={{ marginTop: 16, color: "#c0392b" }}>{tasksResult.message}</p>
       )}
 
       {tasksResult && tasksResult.status === "ok" && (
@@ -296,10 +311,6 @@ export default function Home() {
             </div>
           )}
         </div>
-      )}
-
-      {itineraryResult && itineraryResult.status === "insufficient_data" && (
-        <p style={{ marginTop: 16, color: "#c0392b" }}>{itineraryResult.message}</p>
       )}
 
       {itineraryResult && itineraryResult.status === "ok" && (
