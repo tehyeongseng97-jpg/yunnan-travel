@@ -1,19 +1,18 @@
 /**
  * Itinerary Parser
  * ------------------------------------------------------------
- * 关键修复：多晚连住的信息（如"🏨 香格里拉 11/10–11/13 共4晚"）
- * 只在汇总段落出现一次，不会每天重复写。先扫描全文的住宿汇总段落，
- * 建立"日期→住宿地"映射表，再用它填补每日区块里没有单独写住宿的日子。
+ * 关键修复：多晚连住的信息只在汇总段落出现一次，先扫描全文建立
+ * "日期→住宿地"映射表，再填补每日区块没单独写住宿的日子。
  *
- * 本次追加修复：
- * 1. "今晚:" 后面紧跟一个独立的地名行（如 "今晚:\n📍 丽江市区"）之前没读到
- * 2. "晚上"这类纯时间词被误当作候选地名收下，导致真正的地名被这个假候选挡住
+ * 本次新增：提取"📍 推荐区域：XXX"这类用户自己在行程里写的具体推荐，
+ * 单独作为字段展示出来，而不是只显示笼统的住宿地名。
  */
 
 export interface ParsedDay {
   date: string;
   title: string;
   hotel: string | null;
+  recommendedArea: string | null; // 用户原文里写的具体推荐区域
   priceRefs: string[];
   warnings: string[];
   transportModes: string[];
@@ -32,7 +31,6 @@ const HOTEL_PLACEHOLDER_ONLY = [
   "酒店", "住宿", "入住", "换酒店", "住宿安排", "今晚", "继续住",
 ];
 
-// 纯时间/动作词，不可能是地名，即使在候选行里出现也要跳过
 const TIME_OR_ACTION_ONLY = [
   "晚上", "早上", "上午", "下午", "中午", "凌晨", "今天", "明天",
   "休息", "自由活动", "不安排大型景点",
@@ -60,13 +58,11 @@ function extractHotelFromDayBlock(block: string): string | null {
   const sameLine = lines[hotelIdx].replace(/🏨/g, "").trim();
   if (sameLine.length > 1) candidates.push(sameLine);
 
-  // 往下多看几行，把每一行都当候选，稍后统一过滤，而不是找到第一个非空就停
   for (let i = hotelIdx + 1; i < Math.min(hotelIdx + 6, lines.length); i++) {
     const l = lines[i];
     if (/^\d{1,2}:\d{2}/.test(l)) continue;
     if (/^[🚕🚗🚄✈️🚲🚌🍽️🍜☕🌊🏔️🏮🌅]/.test(l)) continue;
     if (l.length <= 1) continue;
-    // "今晚:" 这种以冒号结尾、本身没有地名的行，跳过但继续往下找
     if (/^今晚[：:]?$/.test(l)) continue;
     candidates.push(l.replace(/📍/g, "").replace(/[：:]\s*$/, "").trim());
   }
@@ -74,7 +70,14 @@ function extractHotelFromDayBlock(block: string): string | null {
   for (const c of candidates) {
     if (!isPlaceholderOnly(c)) return c;
   }
-  return null; // 都是占位词/时间词，宁可返回空，也不要返回一个错误的候选
+  return null;
+}
+
+/** 提取"📍 推荐区域：XXX"或"📍 推荐：XXX"这类用户自己写的具体推荐 */
+function extractRecommendedArea(block: string): string | null {
+  const match = block.match(/📍\s*推荐(?:区域)?[：:]\s*([^\n]+)/);
+  if (!match) return null;
+  return match[1].trim();
 }
 
 function extractTransportModes(block: string): string[] {
@@ -132,35 +135,54 @@ function findLocationBefore(fullText: string, index: number): string {
   return "";
 }
 
-function parseAccommodationSummary(fullText: string): Map<string, string> {
-  const map = new Map<string, string>();
+/** 找一个位置之前最近的"📍 推荐区域：XXX"，用于给汇总段落的住宿也配上推荐区域 */
+function findRecommendedAreaBefore(fullText: string, index: number): string | null {
+  const before = fullText.slice(Math.max(0, index - 300), index);
+  const match = [...before.matchAll(/📍\s*推荐(?:区域)?[：:]\s*([^\n]+)/g)];
+  if (match.length === 0) return null;
+  return match[match.length - 1][1].trim();
+}
+
+function parseAccommodationSummary(
+  fullText: string
+): { hotelMap: Map<string, string>; areaMap: Map<string, string> } {
+  const hotelMap = new Map<string, string>();
+  const areaMap = new Map<string, string>();
 
   const rangeWithGong = /([\d]{1,2}\/[\d]{1,2})\s*[–\-]\s*([\d]{1,2}\/[\d]{1,2})[^\n]{0,10}共\s*\d+\s*晚/g;
   let m: RegExpExecArray | null;
   while ((m = rangeWithGong.exec(fullText))) {
     const location = findLocationBefore(fullText, m.index);
-    if (location) fillDateRange(map, m[1], m[2], location, false);
+    const area = findRecommendedAreaBefore(fullText, m.index);
+    if (location) {
+      fillDateRange(hotelMap, m[1], m[2], location, false);
+      if (area) fillDateRange(areaMap, m[1], m[2], area, false);
+    }
   }
 
   const singleDate = /([\d]{1,2}\/[\d]{1,2})\s*[：:]\s*([\u4e00-\u9fa5]{2,10})\s*\d+晚/g;
   while ((m = singleDate.exec(fullText))) {
     const date = m[1];
     const location = m[2].trim();
-    if (!map.has(date)) map.set(date, location);
+    if (!hotelMap.has(date)) hotelMap.set(date, location);
   }
 
   const rangeWithColon = /([\d]{1,2}\/[\d]{1,2})\s*[–\-]\s*([\d]{1,2}\/[\d]{1,2})\s*[：:]\s*([\u4e00-\u9fa5]{2,10})\s*\d+晚/g;
   while ((m = rangeWithColon.exec(fullText))) {
-    fillDateRange(map, m[1], m[2], m[3].trim(), false);
+    fillDateRange(hotelMap, m[1], m[2], m[3].trim(), false);
   }
 
   const checkInOut = /([\d]{1,2}\/[\d]{1,2})\s*入住\s*[→\-]\s*([\d]{1,2}\/[\d]{1,2})\s*退房/g;
   while ((m = checkInOut.exec(fullText))) {
     const location = findLocationBefore(fullText, m.index);
-    if (location) fillDateRange(map, m[1], m[2], location, true);
+    const area = findRecommendedAreaBefore(fullText, m.index);
+    if (location) {
+      fillDateRange(hotelMap, m[1], m[2], location, true);
+      if (area) fillDateRange(areaMap, m[1], m[2], area, true);
+    }
   }
 
-  return map;
+  return { hotelMap, areaMap };
 }
 
 export function parseItinerary(text: string): ParsedDay[] {
@@ -186,6 +208,7 @@ export function parseItinerary(text: string): ParsedDay[] {
       date,
       title,
       hotel: extractHotelFromDayBlock(block),
+      recommendedArea: extractRecommendedArea(block),
       priceRefs: extractPriceRefs(block),
       warnings: warningLines,
       transportModes: extractTransportModes(block),
@@ -193,12 +216,15 @@ export function parseItinerary(text: string): ParsedDay[] {
     });
   }
 
-  // 用汇总段落信息填补每日区块没有单独写住宿的日子（现在会覆盖之前抓到"晚上"这种假候选被跳过、返回 null 的天）
-  const summaryMap = parseAccommodationSummary(text);
+  const { hotelMap, areaMap } = parseAccommodationSummary(text);
   for (const day of days) {
     if (!day.hotel) {
-      const fromSummary = summaryMap.get(day.date);
+      const fromSummary = hotelMap.get(day.date);
       if (fromSummary) day.hotel = fromSummary;
+    }
+    if (!day.recommendedArea) {
+      const fromSummary = areaMap.get(day.date);
+      if (fromSummary) day.recommendedArea = fromSummary;
     }
   }
 
