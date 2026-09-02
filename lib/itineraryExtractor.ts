@@ -8,7 +8,9 @@ export interface TicketTask {
 export interface HotelTask {
   date: string;
   location: string;
+  recommendedArea: string | null;
 }
+
 
 export interface RouteTask {
   date: string;
@@ -78,9 +80,10 @@ export function extractTasks(days: ParsedDay[]): ExtractedTasks {
       }
     }
 
-    if (day.hotel && isValidHotelName(day.hotel)) {
-      hotelTasks.push({ date: day.date, location: day.hotel });
+        if (day.hotel && isValidHotelName(day.hotel)) {
+      hotelTasks.push({ date: day.date, location: day.hotel, recommendedArea: day.recommendedArea });
     }
+
 
     if (stops.length >= 3) {
       routeTasks.push({
